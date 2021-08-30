@@ -82,7 +82,6 @@ class Compressor():
         f.write(self.output)
         f.close()
 
-
     def load_gif(self):
         img = Image.open(self.directory)
         self.image_size = img.size
@@ -146,7 +145,7 @@ class Compressor():
                 byte = 0
                 for z in range(7,-1,-1):
                     index = (y+z)*(width*rgba_size) + (x*rgba_size)
-                    avg = ((data[index] + data[index + 1] + data[index + 2]) / 3)
+                    avg = ((data[index]) + (data[index + 1]) + (data[index + 2]) / 3)
                     # set the bit if pixel is turned on.
                     if avg > self.threshold:
                         byte += np.power(2, z)
@@ -169,7 +168,8 @@ class Compressor():
 
         change_indexs = []
         change_values = []
-        change_range = [0,]
+        change_range = []
+        change_sum = 0
         last_change_index = 0
         # we do not want to modify the base frame
         for i in range(1, len(strs)):
@@ -179,11 +179,10 @@ class Compressor():
                 if str1[x] != str2[x]:
                     change_indexs.append(x)
                     change_values.append(str2[x])
-                    last_change_index = len(change_values)
+                    last_change_index = len(change_values)-change_sum
             change_range.append(last_change_index)
-
+            change_sum += last_change_index
         self.frame0 = strs[0].replace(' ','').split(',')
-        # lets cut that down by around 43% by only using the bits required to store the changes
         self.change_indexs = self.compress_array(change_indexs)
         self.change_range = self.compress_array(change_range)
         self.change_values = change_values
@@ -197,9 +196,9 @@ class Compressor():
         split_index = 0
         for i in range(0, len(array)):
             bytestr = np.base_repr(array[i], base = 2, padding = 0) 
-            while len(bytestr) < 9:
+            while len(bytestr) < bit_size:
                 bytestr = '0' + bytestr
-            for j in range(0, 9):
+            for j in range(0, bit_size):
                 if(split_index > 7):
                     split_index = 0
                     output += ", 0b"
@@ -229,7 +228,7 @@ class Compressor():
         self.output += "#define ANI_BYTE_SIZE 8\n"
         self.output += "#define COPY_BIT(dest, id, src, is) dest = (( dest & ~(1<<id) ) | ((src & (1<<is))>>is) << id );\n\n"
         self.output += "//*********************************************\n"
-        self.output += f"//* Compression ratio: {round(self.raw_mem_size/self.total_memory,3)} to 1             *\n"
+        self.output += f"//* Compression ratio: {round(self.raw_mem_size/self.total_memory,2)} to 1             *\n"
         self.output += f"//* Estimated PROGMEM Usage: {self.total_memory} bytes        *\n"
         self.output += "//*********************************************\n\n"
         
@@ -245,10 +244,10 @@ class Compressor():
         self.output += "\nstatic const char PROGMEM change_vals[] = {\n"
         self.array_to_string(self.change_values)
         
-        self.output += "\nstatic uint64_t get_num(const uint8_t* arr, int bitsize, int index){\n"
-        self.output += "\tint arr_index = ((bitsize*index)/ANI_BYTE_SIZE)-1;\n"
-        self.output += "\tint byte_index = 7-(((bitsize*index) % ANI_BYTE_SIZE)-1);\n"
-        self.output += "\tuint64_t res = 0;\n"
+        self.output += "\nstatic uint16_t get_num(const uint8_t* arr, int bitsize, int index){\n"
+        self.output += "\tint arr_index = ((bitsize*index)/ANI_BYTE_SIZE);\n"
+        self.output += "\tint byte_index = 7-(((bitsize*index) % ANI_BYTE_SIZE));\n"
+        self.output += "\tuint16_t res = 0;\n"
         self.output += "\tfor(int i = bitsize-1;i >= 0; i--){\n"
         self.output += "\t\tCOPY_BIT(res, i, arr[arr_index], byte_index);\n"
         self.output += "\t\tbyte_index--;\n"
@@ -261,11 +260,11 @@ class Compressor():
         self.output += "uint16_t index_start = 0;\n"
         self.output += "uint16_t index_end = 0;\n\n"
         self.output += "static void change_frame_bytewise(uint8_t frame_number){\n"
-        self.output += f"\tindex_start = get_num(cumsum_inds, {self.change_range[1]}, frame_number);\n"
-        self.output += f"\tindex_end = get_num(cumsum_inds, {self.change_range[1]}, frame_number+1);\n"
+        self.output += f"\tindex_start = frame_number == 0 ? 0 : index_end;\n"
+        self.output += f"\tindex_end = index_start + get_num(cumsum_inds, {self.change_range[1]}, frame_number);\n"
         self.output += "\tif (index_start != index_end){\n"
         self.output += "\t\tfor (uint16_t i=index_start; i < index_end; i++){\n"
-        self.output += f"\t\t\toled_write_raw_byte(pgm_read_byte(change_vals + i), get_num(change_inds, {self.change_indexs[1]}, i+1));\n"
+        self.output += f"\t\t\toled_write_raw_byte(pgm_read_byte(change_vals + i), get_num(change_inds, {self.change_indexs[1]}, i));\n"
         self.output += "\t\t}\n\t}\n}\n"
 
     def array_to_string(self, array):
