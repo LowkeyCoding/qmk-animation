@@ -25,12 +25,14 @@ static void render_anim(void) {
         oled_write_raw_P( frame, ANIM_SIZE);
         first_render = 0;
     } else {
-        change_frame_bytewise(c_frame/2);
+        change_frame_bytewise(c_frame);
     }
     c_frame = c_frame+1 > IDLE_FRAMES ? 0 : c_frame+1;
 }
 ```
 Then this function can be used in the `oled_task_user` function.
+## Set animation speed
+To set the animation speed add `#define OLED_UPDATE_INTERVAL <time in ms>` in the file `config.h` inside your keymap folder.
 
 
 # Credits
